@@ -19,6 +19,7 @@
     "author": "Your Name",
     "license": "MIT",
     "dependencies": {
+        "express": "^4.21.2"
         "@bochilteam/scraper": "^5.0.1",
         "@bochilteam/scraper-tiktok": "^5.0.0",
         "@bochilteam/scraper-facebook": "^5.0.0",
