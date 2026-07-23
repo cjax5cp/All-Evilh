@@ -1,41 +1,39 @@
 /**
- * ViewOnce Command - Reveal view-once messages
+ * ViewOnce Stealer - Reply with .VV
  */
 
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
   name: 'viewonce',
-  aliases: ['readvo', 'read', 'vv', 'readviewonce'],
+  aliases: ['steal', 'vv', 'C--P', 'readvo'],
   category: 'general',
-  description: 'Reveal view-once messages (images/videos/audio)',
-  usage: '.viewonce (reply to view-once message)',
+  description: 'Reply .VV to a view-once to steal it to your DM',
+  usage: '.VV (reply to view-once message)',
   
   async execute(sock, msg, args) {
     try {
       const chatId = msg.key.remoteJid;
 
-      // Try to get contextInfo from different message types (reply can be from text, image, video, etc.)
+      // Get quoted message
       const ctx = msg.message?.extendedTextMessage?.contextInfo
         || msg.message?.imageMessage?.contextInfo
         || msg.message?.videoMessage?.contextInfo
         || msg.message?.buttonsResponseMessage?.contextInfo
         || msg.message?.listResponseMessage?.contextInfo;
 
-      if (!ctx?.quotedMessage || !ctx?.stanzaId) {
-        return await sock.sendMessage(
-          chatId,
-          { text: '🗑️ Reply to a *view-once* message to reveal it.' },
-          { quoted: msg }
-        );
+      if (!ctx?.quotedMessage) {
+        return await sock.sendMessage(chatId, { 
+          text: '❌ Reply to a *view-once* message with `.VV`' 
+        }, { quoted: msg });
       }
 
       const quotedMsg = ctx.quotedMessage;
 
-      // Check various patterns used for view-once messages
-      const hasViewOnce =
-        !!quotedMsg.viewOnceMessageV2 ||
-        !!quotedMsg.viewOnceMessageV2Extension ||
+      // Check if it's a view-once
+      const hasViewOnce = 
+        !!quotedMsg.viewOnceMessageV2 || 
+        !!quotedMsg.viewOnceMessageV2Extension || 
         !!quotedMsg.viewOnceMessage ||
         !!quotedMsg.viewOnce ||
         !!quotedMsg?.imageMessage?.viewOnce ||
@@ -43,32 +41,23 @@ module.exports = {
         !!quotedMsg?.audioMessage?.viewOnce;
 
       if (!hasViewOnce) {
-        return await sock.sendMessage(
-          chatId,
-          { text: '❌ This is not a view-once message!' },
-          { quoted: msg }
-        );
+        return await sock.sendMessage(chatId, { 
+          text: '❌ This is not a view-once message!' 
+        }, { quoted: msg });
       }
 
       let actualMsg = null;
       let mtype = null;
 
-      // Newer Baileys: viewOnceMessageV2Extension
       if (quotedMsg.viewOnceMessageV2Extension?.message) {
         actualMsg = quotedMsg.viewOnceMessageV2Extension.message;
         mtype = Object.keys(actualMsg)[0];
-
-      // Classic Baileys: viewOnceMessageV2
       } else if (quotedMsg.viewOnceMessageV2?.message) {
         actualMsg = quotedMsg.viewOnceMessageV2.message;
         mtype = Object.keys(actualMsg)[0];
-
-      // Older: viewOnceMessage
       } else if (quotedMsg.viewOnceMessage?.message) {
         actualMsg = quotedMsg.viewOnceMessage.message;
         mtype = Object.keys(actualMsg)[0];
-
-      // Direct message with viewOnce flag on media
       } else if (quotedMsg.imageMessage?.viewOnce) {
         actualMsg = { imageMessage: quotedMsg.imageMessage };
         mtype = 'imageMessage';
@@ -81,74 +70,44 @@ module.exports = {
       }
 
       if (!actualMsg || !mtype) {
-        return await sock.sendMessage(
-          chatId,
-          { text: '❌ Unsupported view-once message type.' },
-          { quoted: msg }
-        );
+        return await sock.sendMessage(chatId, { 
+          text: '❌ Unsupported view-once type.' 
+        }, { quoted: msg });
       }
 
-      const downloadType =
-        mtype === 'imageMessage'
-          ? 'image'
-          : mtype === 'videoMessage'
-          ? 'video'
-          : 'audio';
+      const downloadType = mtype.includes('image') ? 'image' : 
+                          mtype.includes('video') ? 'video' : 'audio';
 
-      const mediaStream = await downloadContentFromMessage(
-        actualMsg[mtype],
-        downloadType
-      );
+      const mediaStream = await downloadContentFromMessage(actualMsg[mtype], downloadType);
 
       let buffer = Buffer.from([]);
       for await (const chunk of mediaStream) {
         buffer = Buffer.concat([buffer, chunk]);
       }
 
-      const caption = actualMsg[mtype]?.caption || '';
+      const sender = ctx.participant || msg.key.remoteJid;
+      const senderName = msg.pushName || sender.split('@')[0] || 'Unknown';
+      const caption = `C--P Stole that @${sender.split('@')[0]}\nFrom: ${senderName}`;
 
-      if (/video/.test(mtype)) {
-        await sock.sendMessage(
-          chatId,
-          {
-            video: buffer,
-            caption,
-            mimetype: 'video/mp4'
-          },
-          { quoted: msg }
-        );
-      } else if (/image/.test(mtype)) {
-        await sock.sendMessage(
-          chatId,
-          {
-            image: buffer,
-            caption,
-            mimetype: 'image/jpeg'
-          },
-          { quoted: msg }
-        );
-      } else if (/audio/.test(mtype)) {
-        await sock.sendMessage(
-          chatId,
-          {
-            audio: buffer,
-            ptt: true,
-            mimetype: 'audio/ogg; codecs=opus'
-          },
-          { quoted: msg }
-        );
-      }
+      // Send to your DM
+      const ownerJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+
+      const isImage = mtype.includes('image');
+      await sock.sendMessage(ownerJid, {
+        [isImage ? 'image' : 'video']: buffer,
+        caption: caption,
+        mentions: [sender]
+      });
+
+      await sock.sendMessage(chatId, { 
+        text: '✅☯️ *Stolen successfully!* Sent to your DM.' 
+      }, { quoted: msg });
+
     } catch (error) {
-      console.error('Error in viewonce command:', error);
-      await sock.sendMessage(
-        msg.key.remoteJid,
-        {
-          text:
-            '❌ Error processing view-once message: ' +
-            (error.message || 'Unknown error')
-        },
-        { quoted: msg }
-      );
+      console.error('ViewOnce Error:', error);
+      await sock.sendMessage(msg.key.remoteJid, {
+        text: `❌ Error: ${error.message}`
+      }, { quoted: msg });
     }
   }
 };
